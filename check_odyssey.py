@@ -93,7 +93,7 @@ def user_acknowledged(offset):
     return False
 
 
-def spam_alarm(message, times=200, gap=2):
+def spam_alarm(message, times=200, gap=5):
     print(f"ALARM: {message}")
     offset = latest_update_id()
     for _ in range(times):
@@ -143,6 +143,7 @@ def run():
         page = ctx.new_page()
 
         start = time.time()
+        heartbeat_sent = False
         while time.time() - start < RUN_TIME:
             try:
                 body, days = read_page(page)
@@ -151,6 +152,14 @@ def run():
                 new_days = sorted(days - BASELINE_DAYS)
                 print(f"dates listed: {sorted(days)} | Havelock: {has_loc} "
                       f"| {TARGET_TIME} present: {TARGET_TIME in body}")
+
+                if not heartbeat_sent:
+                    # one ping per run, proving the cloud job loaded the page + can reach you
+                    send_telegram(
+                        f"✅ Watcher alive (GitHub cloud). Sees dates {sorted(days)}, "
+                        f"Havelock={has_loc}. Waiting for Jul {TARGET_DAY} {TARGET_TIME}."
+                    )
+                    heartbeat_sent = True
 
                 if TARGET_DAY in days and has_loc:
                     time_note = "12:45 PM listed" if TARGET_TIME in body else "check times"
