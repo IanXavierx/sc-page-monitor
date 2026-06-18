@@ -29,6 +29,12 @@ RUN_TIME = 18000                # total run ~5 hours (under GitHub's 6h job limi
 
 MONTHS = "JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC"
 
+# Blindness / block detection: a real page must contain one of these markers.
+PAGE_OK_MARKERS = ("ZZ_FORCE_BLIND_TEST",)
+BLOCK_HINTS = ("ATTENTION REQUIRED", "CLOUDFLARE", "ACCESS DENIED", "ARE YOU HUMAN",
+               "CAPTCHA", "FORBIDDEN", "TOO MANY REQUESTS", "RATE LIMIT")
+BLIND_THRESHOLD = 2  # TEMP cloud test
+
 # --- SECRETS (set as GitHub Actions secrets) ---
 BOT_TOKEN = os.getenv("TG_BOT_TOKEN")
 CHAT_ID = os.getenv("TG_CHAT_ID")
@@ -119,7 +125,11 @@ def read_page(page):
             page.wait_for_timeout(3000)
     page.wait_for_timeout(7000)
 
-    body = page.inner_text("body")
+    try:
+        body = page.inner_text("body")
+    except Exception as e:
+        print(f"could not read page body: {e}")
+        return "", set()
     days = set()
     for b in page.query_selector_all("button"):
         txt = (b.inner_text() or "").strip().replace("\n", " ").upper()
@@ -144,10 +154,36 @@ def run():
 
         start = time.time()
         heartbeat_sent = False
+        blind_count = 0
+        blind_alerted = False
         while time.time() - start < RUN_TIME:
             try:
                 body, days = read_page(page)
                 up = body.upper()
+
+                # --- blindness / block detection ---
+                page_readable = len(up) > 50 and any(m in up for m in PAGE_OK_MARKERS)
+                if not page_readable:
+                    blind_count += 1
+                    print(f"BLIND read #{blind_count} (body len={len(up)})")
+                    if blind_count >= BLIND_THRESHOLD and not blind_alerted:
+                        hint = next((h for h in BLOCK_HINTS if h in up), "")
+                        reason = f"possible block: {hint}" if hint else "page empty/unrecognized"
+                        send_telegram(
+                            f"⚠️ Watcher BLIND for {blind_count} checks ({reason}). "
+                            f"It may be blocked — check the page manually: {URL}"
+                        )
+                        blind_alerted = True
+                    if TEST_MODE:
+                        break
+                    time.sleep(CHECK_INTERVAL)
+                    continue
+
+                if blind_alerted:  # recovered after a blind spell
+                    send_telegram("✅ Watcher can read the Scope page again (recovered).")
+                blind_count = 0
+                blind_alerted = False
+
                 has_loc = TARGET_LOC in up
                 new_days = sorted(days - BASELINE_DAYS)
                 print(f"dates listed: {sorted(days)} | Havelock: {has_loc} "
