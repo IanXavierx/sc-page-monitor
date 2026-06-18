@@ -93,7 +93,7 @@ def user_acknowledged(offset):
     return False
 
 
-def spam_alarm(message, times=200, gap=5):
+def spam_alarm(message, times=200, gap=2):
     print(f"ALARM: {message}")
     offset = latest_update_id()
     for _ in range(times):
