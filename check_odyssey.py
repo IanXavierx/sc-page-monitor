@@ -30,10 +30,10 @@ RUN_TIME = 18000                # total run ~5 hours (under GitHub's 6h job limi
 MONTHS = "JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC"
 
 # Blindness / block detection: a real page must contain one of these markers.
-PAGE_OK_MARKERS = ("ZZ_FORCE_BLIND_TEST",)
+PAGE_OK_MARKERS = ("ODYSSEY", "SCOPE")
 BLOCK_HINTS = ("ATTENTION REQUIRED", "CLOUDFLARE", "ACCESS DENIED", "ARE YOU HUMAN",
                "CAPTCHA", "FORBIDDEN", "TOO MANY REQUESTS", "RATE LIMIT")
-BLIND_THRESHOLD = 2  # TEMP cloud test
+BLIND_THRESHOLD = 5  # consecutive unreadable checks (~75s) before warning you
 
 # --- SECRETS (set as GitHub Actions secrets) ---
 BOT_TOKEN = os.getenv("TG_BOT_TOKEN")
