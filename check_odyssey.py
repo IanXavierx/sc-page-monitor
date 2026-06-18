@@ -10,6 +10,7 @@ it running in the cloud.
 Run locally with no secrets set -> TEST MODE: prints what it sees, sends nothing.
 """
 
+import json
 import os
 import re
 import time
@@ -34,27 +35,77 @@ CHAT_ID = os.getenv("TG_CHAT_ID")
 TEST_MODE = not (BOT_TOKEN and CHAT_ID)
 
 
-def send_telegram(message):
+def send_telegram(message, with_stop_button=False):
     if TEST_MODE:
         print("[TEST MODE] would send Telegram:", message)
         return
+    data = {"chat_id": CHAT_ID, "text": message}
+    if with_stop_button:
+        data["reply_markup"] = json.dumps(
+            {"inline_keyboard": [[{"text": "🛑 STOP ALERTS", "callback_data": "stop"}]]}
+        )
     try:
         requests.post(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": message},
-            timeout=10,
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", data=data, timeout=10
         )
     except Exception as e:
         print(f"Telegram error: {e}")
 
 
+def latest_update_id():
+    """Baseline so we only react to NEW taps/replies once the alarm starts."""
+    try:
+        r = requests.get(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates",
+            params={"timeout": 0}, timeout=10,
+        )
+        res = r.json().get("result", [])
+        return res[-1]["update_id"] if res else 0
+    except Exception:
+        return 0
+
+
+def user_acknowledged(offset):
+    """True if you tapped STOP or replied 'stop' since the alarm began."""
+    try:
+        r = requests.get(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates",
+            params={"offset": offset + 1, "timeout": 0}, timeout=10,
+        )
+        for u in r.json().get("result", []):
+            cb = u.get("callback_query")
+            if cb and cb.get("data") == "stop":
+                try:
+                    requests.post(
+                        f"https://api.telegram.org/bot{BOT_TOKEN}/answerCallbackQuery",
+                        data={"callback_query_id": cb["id"], "text": "Alerts stopped"},
+                        timeout=10,
+                    )
+                except Exception:
+                    pass
+                return True
+            msg = u.get("message") or {}
+            if str(msg.get("chat", {}).get("id")) == str(CHAT_ID) and \
+                    msg.get("text", "").strip().lower() in ("stop", "/stop"):
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def spam_alarm(message, times=200, gap=5):
     print(f"ALARM: {message}")
+    offset = latest_update_id()
     for _ in range(times):
-        send_telegram(message)
+        send_telegram(message, with_stop_button=True)
         if TEST_MODE:
-            break  # don't loop 200x in test mode
-        time.sleep(gap)
+            break  # don't loop in test mode
+        for _ in range(gap):  # check once per second so STOP is near-instant
+            time.sleep(1)
+            if user_acknowledged(offset):
+                send_telegram("🔕 Alerts stopped — go book E13/E14, 12:45 PM. Good luck!")
+                print("user acknowledged — stopping alerts")
+                return
 
 
 def read_page(page):
