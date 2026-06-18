@@ -20,7 +20,7 @@ from playwright.sync_api import sync_playwright
 
 # --- CONFIGURATION ---
 URL = "https://www.scopecinemas.com/movies/the-odyssey/showtimes"
-TARGET_DAY = 18                 # TEMP CLOUD TEST — revert to 22 after
+TARGET_DAY = 22                 # the date you want (Jul 22)
 TARGET_TIME = "12:45 PM"        # the showtime you want
 TARGET_LOC = "HAVELOCK"         # IMAX is only at Havelock City Mall
 BASELINE_DAYS = {17, 18, 19}    # dates already listed as of 2026-06-19
