@@ -24,18 +24,13 @@ TARGET_DAY = 22                 # the date you want (Jul 22)
 TARGET_TIME = "12:45 PM"        # the showtime you want
 TARGET_LOC = "HAVELOCK"         # IMAX is only at Havelock City Mall
 BASELINE_DAYS = {17, 18, 19}    # dates already listed as of 2026-06-19
-CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "15"))  # 15s (Avatar proved this is fine)
+CHECK_INTERVAL = 15             # seconds between page reloads (same as Avatar)
 RUN_TIME = 18000                # total run ~5 hours (under GitHub's 6h job limit)
 
 MONTHS = "JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC"
 
-# Blindness / block detection: a real loaded page must contain the movie title.
-# (We do NOT use "SCOPE" — it appears in the nav/footer even when the showtimes
-# content fails to render, which would mask a broken read.)
-PAGE_OK_MARKERS = ("ODYSSEY",)
-# Recycling wipes the Cloudflare clearance cookie -> forces a fresh challenge each time,
-# which is counter-productive. Keep one browser so the cf_clearance cookie persists.
-RECYCLE_AFTER = 10 ** 9  # effectively off
+# Blindness / block detection: a real page must contain one of these markers.
+PAGE_OK_MARKERS = ("ODYSSEY", "SCOPE")
 BLOCK_HINTS = ("ATTENTION REQUIRED", "CLOUDFLARE", "ACCESS DENIED", "ARE YOU HUMAN",
                "CAPTCHA", "FORBIDDEN", "TOO MANY REQUESTS", "RATE LIMIT")
 BLIND_THRESHOLD = 5  # consecutive unreadable checks (~75s) before warning you
@@ -128,18 +123,13 @@ def read_page(page):
         except Exception as e:
             print(f"goto attempt {attempt + 1} failed: {e}")
             page.wait_for_timeout(3000)
-    # Let content render — and give any Cloudflare challenge time to auto-solve
-    # (a real browser passes the managed challenge and gets a cf_clearance cookie).
-    body = ""
-    for _ in range(3):
-        page.wait_for_timeout(8000)
-        try:
-            body = page.inner_text("body")
-        except Exception as e:
-            print(f"could not read page body: {e}")
-            body = ""
-        if "ODYSSEY" in body.upper():
-            break  # real content rendered; challenge (if any) has cleared
+    page.wait_for_timeout(7000)
+
+    try:
+        body = page.inner_text("body")
+    except Exception as e:
+        print(f"could not read page body: {e}")
+        return "", set()
     days = set()
     for b in page.query_selector_all("button"):
         txt = (b.inner_text() or "").strip().replace("\n", " ").upper()
@@ -153,34 +143,20 @@ def read_page(page):
 def run():
     with sync_playwright() as p:
         print(f"Odyssey watcher started ({'TEST MODE' if TEST_MODE else 'LIVE'})...")
-
-        def make_browser():
-            b = p.chromium.launch(
-                headless=True, args=["--disable-blink-features=AutomationControlled"]
-            )
-            ctx = b.new_context(
-                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            )
-            return b, ctx.new_page()
-
-        browser, page = make_browser()
-        browser_started = time.time()
+        browser = p.chromium.launch(
+            headless=True, args=["--disable-blink-features=AutomationControlled"]
+        )
+        ctx = browser.new_context(
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
+        page = ctx.new_page()
 
         start = time.time()
         heartbeat_sent = False
         blind_count = 0
         blind_alerted = False
         while time.time() - start < RUN_TIME:
-            # recycle the browser periodically so it never runs long enough to rot
-            if time.time() - browser_started > RECYCLE_AFTER:
-                print("recycling browser (anti-rot)")
-                try:
-                    browser.close()
-                except Exception:
-                    pass
-                browser, page = make_browser()
-                browser_started = time.time()
             try:
                 body, days = read_page(page)
                 up = body.upper()
