@@ -24,7 +24,7 @@ TARGET_DAY = 22                 # the date you want (Jul 22)
 TARGET_TIME = "12:45 PM"        # the showtime you want
 TARGET_LOC = "HAVELOCK"         # IMAX is only at Havelock City Mall
 BASELINE_DAYS = {17, 18, 19}    # dates already listed as of 2026-06-19
-CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "90"))  # gentler: dodge Cloudflare rate-block
+CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "15"))  # 15s (Avatar proved this is fine)
 RUN_TIME = 18000                # total run ~5 hours (under GitHub's 6h job limit)
 
 MONTHS = "JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC"
