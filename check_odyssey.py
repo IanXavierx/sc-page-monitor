@@ -29,8 +29,11 @@ RUN_TIME = 18000                # total run ~5 hours (under GitHub's 6h job limi
 
 MONTHS = "JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC"
 
-# Blindness / block detection: a real page must contain one of these markers.
-PAGE_OK_MARKERS = ("ODYSSEY", "SCOPE")
+# Blindness / block detection: a real loaded page must contain the movie title.
+# (We do NOT use "SCOPE" — it appears in the nav/footer even when the showtimes
+# content fails to render, which would mask a broken read.)
+PAGE_OK_MARKERS = ("ODYSSEY",)
+RECYCLE_AFTER = 1800  # recreate the browser every 30 min to avoid long-run rot
 BLOCK_HINTS = ("ATTENTION REQUIRED", "CLOUDFLARE", "ACCESS DENIED", "ARE YOU HUMAN",
                "CAPTCHA", "FORBIDDEN", "TOO MANY REQUESTS", "RATE LIMIT")
 BLIND_THRESHOLD = 5  # consecutive unreadable checks (~75s) before warning you
@@ -143,20 +146,34 @@ def read_page(page):
 def run():
     with sync_playwright() as p:
         print(f"Odyssey watcher started ({'TEST MODE' if TEST_MODE else 'LIVE'})...")
-        browser = p.chromium.launch(
-            headless=True, args=["--disable-blink-features=AutomationControlled"]
-        )
-        ctx = browser.new_context(
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        )
-        page = ctx.new_page()
+
+        def make_browser():
+            b = p.chromium.launch(
+                headless=True, args=["--disable-blink-features=AutomationControlled"]
+            )
+            ctx = b.new_context(
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            return b, ctx.new_page()
+
+        browser, page = make_browser()
+        browser_started = time.time()
 
         start = time.time()
         heartbeat_sent = False
         blind_count = 0
         blind_alerted = False
         while time.time() - start < RUN_TIME:
+            # recycle the browser periodically so it never runs long enough to rot
+            if time.time() - browser_started > RECYCLE_AFTER:
+                print("recycling browser (anti-rot)")
+                try:
+                    browser.close()
+                except Exception:
+                    pass
+                browser, page = make_browser()
+                browser_started = time.time()
             try:
                 body, days = read_page(page)
                 up = body.upper()
